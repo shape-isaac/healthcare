@@ -380,6 +380,29 @@
             font-size: 0.9em;
             line-height: 1.4;
         }
+
+        /* 添加错误信息样式 */
+        .error-message {
+            background: #fff3f3;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #dc3545;
+        }
+
+        .error-message h3 {
+            color: #dc3545;
+            margin-bottom: 10px;
+        }
+
+        .error-message ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+
+        .error-message li {
+            color: #666;
+            margin: 5px 0;
+        }
     </style>
 </head>
 <body>
@@ -577,7 +600,9 @@
             },
             API: {
                 DEEPSEEK_API_TOKEN: 'your-default-token',
-                DEEPSEEK_API_URL: 'https://api.siliconflow.cn/v1/chat/completions'
+                DEEPSEEK_API_URL: 'https://api.deepseek.com/v1/chat/completions',  // 修改为正确的API地址
+                // 添加备用 API
+                FALLBACK_API_URL: 'https://api-fallback.deepseek.com/v1/chat/completions'
             }
         };
 
@@ -1302,35 +1327,56 @@
             const options = {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${CONFIG.DEEPSEEK_API_TOKEN}`,
-                    'Content-Type': 'application/json'
+                    'Authorization': `Bearer ${CONFIG.API.DEEPSEEK_API_TOKEN}`,
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
                 },
                 body: JSON.stringify({
-                    model: "deepseek-ai/DeepSeek-R1",
+                    model: "deepseek-chat",  // 修改为正确的模型名称
                     messages: [{
                         role: "user",
                         content: content
-                    }]
+                    }],
+                    temperature: 0.7,
+                    max_tokens: 2000
                 })
             };
 
             try {
-                const response = await fetch(CONFIG.DEEPSEEK_API_URL, options);
-                if (!response.ok) {
-                    throw new Error(`API 请求失败: ${response.status}`);
+                // 首先尝试主要 API
+                let response = await fetch(CONFIG.API.DEEPSEEK_API_URL, options);
+                
+                // 如果主要 API 失败，尝试备用 API
+                if (!response.ok && CONFIG.API.FALLBACK_API_URL) {
+                    console.log('主要 API 调用失败，尝试备用 API');
+                    response = await fetch(CONFIG.API.FALLBACK_API_URL, options);
                 }
+
+                if (!response.ok) {
+                    throw new Error(`API 请求失败: ${response.status} - ${response.statusText}`);
+                }
+
                 const data = await response.json();
+                
+                if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+                    throw new Error('API 返回数据格式不正确');
+                }
+
                 return data.choices[0].message.content;
             } catch (error) {
                 console.error('API调用失败:', error);
-                throw new Error(`API 调用失败: ${error.message}`);
+                // 如果是网络错误，提供更友好的提示
+                if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+                    throw new Error('网络连接失败，请检查您的网络连接');
+                }
+                throw new Error(`AI 分析失败: ${error.message}`);
             }
         }
 
         // 修改 generateAIAnalysis 函数的数据验证
         async function generateAIAnalysis() {
             const analysisDiv = document.getElementById('aiAnalysis');
-            analysisDiv.innerHTML = '<div class="loading">正在生成分析报告</div>';
+            analysisDiv.innerHTML = '<div class="loading">正在生成分析报告，请耐心等待...</div>';
 
             try {
                 // 检查是否有任何记录
@@ -1353,19 +1399,38 @@
                 // 继续生成报告
                 const records = getLastSevenDaysRecords();
                 const content = formatRecordsForAI(records);
-                const analysis = await callDeepseekAPI(content);
-
-                // 直接显示AI返回的内容
-                analysisDiv.innerHTML = `
-                    <div class="analysis-report">
-                        ${analysis}
-                        <div class="report-date">
-                            生成时间：${new Date().toLocaleString()}
+                
+                try {
+                    const analysis = await callDeepseekAPI(content);
+                    analysisDiv.innerHTML = `
+                        <div class="analysis-report">
+                            ${analysis}
+                            <div class="report-date">
+                                生成时间：${new Date().toLocaleString()}
+                            </div>
                         </div>
+                    `;
+                } catch (apiError) {
+                    // 显示更友好的错误信息
+                    analysisDiv.innerHTML = `
+                        <div class="error-message">
+                            <h3>😔 抱歉，生成报告时遇到了问题</h3>
+                            <p>${apiError.message}</p>
+                            <p>建议：</p>
+                            <ul>
+                                <li>检查网络连接</li>
+                                <li>稍后再试</li>
+                                <li>如果问题持续存在，请联系管理员</li>
+                            </ul>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                analysisDiv.innerHTML = `
+                    <div class="error-message">
+                        <p>生成分析报告时出错：${error.message}</p>
                     </div>
                 `;
-            } catch (error) {
-                analysisDiv.innerHTML = `<p>生成分析报告时出错：${error.message}</p>`;
             }
         }
 
