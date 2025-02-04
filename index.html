@@ -488,200 +488,164 @@
     </div>
 
     <script>
-        // 1. 基础配置和全局变量
-        const CONFIG = {
-            DEEPSEEK_API_TOKEN: process.env.DEEPSEEK_API_TOKEN || 'your-default-token', // 使用环境变量
-            DEEPSEEK_API_URL: process.env.DEEPSEEK_API_URL || 'https://api.siliconflow.cn/v1/chat/completions', // 使用环境变量
-            CALORIES_DATABASE: {
-                "主食": {
-                    "米饭": 116,
-                    "面包": 260,
-                    "面条": 110,
-                    "馒头": 223,
-                    "饺子": 200
-                },
-                "肉类": {
-                    "猪肉": 143,
-                    "牛肉": 250,
-                    "羊肉": 203
-                },
-                "禽类": {
-                    "鸡肉": 165,
-                    "鸭肉": 240,
-                    "鹅肉": 238
-                },
-                "水产": {
-                    "鱼": 100,
-                    "虾": 85,
-                    "蟹": 97
-                },
-                "蛋类": {
-                    "鸡蛋": 155,
-                    "鸭蛋": 185,
-                    "皮蛋": 127
-                },
-                "豆制品": {
-                    "豆腐": 76,
-                    "豆浆": 31,
-                    "腐竹": 225
-                },
-                "叶菜类": {
-                    "生菜": 15,
-                    "菠菜": 23,
-                    "白菜": 20
-                },
-                "根茎类": {
-                    "胡萝卜": 41,
-                    "土豆": 76,
-                    "山药": 88
-                },
-                "菌菇类": {
-                    "香菇": 26,
-                    "平菇": 29,
-                    "木耳": 31
-                },
-                "水果": {
-                    "苹果": 52,
-                    "香蕉": 93,
-                    "橙子": 47
-                },
-                "坚果": {
-                    "花生": 589,
-                    "核桃": 654,
-                    "杏仁": 579
-                },
-                "乳制品": {
-                    "牛奶": 60,
-                    "酸奶": 70,
-                    "奶酪": 366
-                },
-                "零食": {
-                    "饼干": 435,
-                    "薯片": 542,
-                    "巧克力": 545
-                },
-                "饮品": {
-                    "咖啡": 1,
-                    "茶": 1,
-                    "果汁": 45
-                }
-            },
-            STANDARD_PORTIONS: {
-                "碗": 250,
-                "份": 200,
-                "片": 30,
-                "个": {
-                    "水果": 150,
-                    "鸡蛋": 50
-                },
-                "盒": 200,
-                "杯": 250
-            }
-        };
-
+        // 1. 全局变量声明和初始化 - 必须放在最前面
         let foodRecords = { records: [] };
-        let fileHandle = null;
+        let chartInstance = null;
 
-        // 2. 辅助函数 - 这些函数不依赖其他函数
-        function chineseToNumber(chinese) {
-            const numbers = {
-                '零': 0, '一': 1, '二': 2, '两': 2, '三': 3, '四': 4,
-                '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10,
-                '半': 0.5
-            };
-            return numbers[chinese] || chinese;
-        }
-
-        function standardizeAmount(amount) {
-            // 处理中文数字
-            amount = amount.replace(/[一二两三四五六七八九十半]/g, match => chineseToNumber(match));
-            
-            // 处理模糊描述
-            if (['适量', '少许'].includes(amount)) {
-                return 50;
+        // 2. 页面加载时的初始化处理
+        document.addEventListener('DOMContentLoaded', async function() {
+            // 加载保存的数据
+            try {
+                const savedData = localStorage.getItem('foodRecords');
+                if (savedData) {
+                    foodRecords = JSON.parse(savedData);
+                    console.log('已加载本地数据:', foodRecords);
+                }
+            } catch (error) {
+                console.error('加载本地数据失败:', error);
+                foodRecords = { records: [] };
             }
 
-            // 提取数字和单位
-            const match = amount.match(/(\d+\.?\d*)(碗|份|片|个|盒|杯|g|克)?/);
-            if (!match) return 100;
-
-            const [, num, unit] = match;
-            const number = parseFloat(num);
-
-            if (!unit || unit === 'g' || unit === '克') return number;
-            return number * (CONFIG.STANDARD_PORTIONS[unit] || 100);
-        }
-
-        // 3. 核心计算函数
-        function calculateCalories(food, amount, category) {
-            if (!food || !amount) return 0;
+            // 初始化图表
+            initializeCharts();
             
-            const standardAmount = standardizeAmount(amount);
-            const categoryName = category ? category.split('(')[0].trim() : '';
-            const caloriesPer100g = CONFIG.CALORIES_DATABASE[categoryName]?.[food] || 100;
-            return (caloriesPer100g * standardAmount) / 100;
+            // 设置当前日期和时间
+            const now = new Date();
+            document.getElementById('date').valueAsDate = now;
+            document.getElementById('time').value = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+            updateMealType();
+        });
+
+        // 3. 修改初始化图表函数
+        function initializeCharts() {
+            try {
+                const chartDom = document.getElementById('caloriesChart');
+                if (!chartDom) {
+                    throw new Error('找不到图表容器');
+                }
+
+                // 确保容器尺寸
+                chartDom.style.width = '100%';
+                chartDom.style.height = '350px';
+
+                // 销毁旧实例
+                if (chartInstance) {
+                    chartInstance.dispose();
+                }
+
+                // 创建新实例
+                chartInstance = echarts.init(chartDom);
+                
+                // 设置基础配置
+                const option = {
+                    title: { text: '卡路里摄入趋势', left: 'center' },
+                    tooltip: { trigger: 'axis', formatter: '{b}: {c} 卡路里' },
+                    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+                    xAxis: {
+                        type: 'category',
+                        data: [],
+                        axisLabel: { rotate: 45, interval: 0 }
+                    },
+                    yAxis: { type: 'value', name: '卡路里' },
+                    series: [{
+                        name: '每日卡路里',
+                        type: 'line',
+                        data: [],
+                        smooth: true,
+                        symbol: 'circle',
+                        symbolSize: 8,
+                        itemStyle: { color: '#4CAF50' },
+                        areaStyle: {
+                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                { offset: 0, color: 'rgba(76,175,80,0.3)' },
+                                { offset: 1, color: 'rgba(76,175,80,0.1)' }
+                            ])
+                        }
+                    }]
+                };
+                
+                chartInstance.setOption(option);
+                
+                // 更新数据
+                updateChartData();
+                
+                // 响应式处理
+                window.addEventListener('resize', () => chartInstance.resize());
+                
+                console.log('图表初始化成功');
+            } catch (error) {
+                console.error('图表初始化失败:', error);
+            }
         }
 
-        // 4. 数据管理函数
-        async function saveFoodRecords() {
+        // 4. 添加更新图表数据的函数
+        function updateChartData() {
+            if (!chartInstance || !foodRecords.records) return;
+
             try {
-                localStorage.setItem('foodRecords', JSON.stringify(foodRecords));
+                // 按日期排序并计算每日卡路里
+                const chartData = foodRecords.records
+                    .sort((a, b) => new Date(a.date) - new Date(b.date))
+                    .map(record => ({
+                        date: record.date,
+                        calories: record.meals.reduce((total, meal) => 
+                            total + meal.foods.reduce((mealTotal, food) => 
+                                mealTotal + (parseFloat(food.calories) || 0), 0), 0)
+                    }));
+
+                console.log('图表数据:', chartData);
+
+                // 更新图表
+                chartInstance.setOption({
+                    xAxis: { data: chartData.map(d => d.date) },
+                    series: [{ data: chartData.map(d => Math.round(d.calories)) }]
+                });
+
+                // 更新热力图
+                updateHeatmap();
             } catch (error) {
-                console.error('保存数据失败:', error);
-                alert('保存记录失败，请检查浏览器存储空间');
+                console.error('更新图表数据失败:', error);
             }
         }
 
         // 5. 修改导入记录函数
         function importRecords(event) {
             const file = event.target.files[0];
-            if (!file) {
-                alert('请选择文件');
-                return;
-            }
+            if (!file) return;
 
             const reader = new FileReader();
+            
             reader.onload = function(e) {
                 try {
-                    const importedData = JSON.parse(e.target.result);
-                    console.log('导入的原始数据:', importedData);
+                    const data = JSON.parse(e.target.result);
+                    console.log('导入的原始数据:', data);
 
-                    if (!importedData || !importedData.records) {
-                        throw new Error('数据格式无效：缺少records字段');
+                    // 验证数据结构
+                    if (!data || !Array.isArray(data.records)) {
+                        throw new Error('无效的数据格式：缺少records数组');
                     }
 
-                    // 转换数据，保持原有的卡路里值
-                    const validRecords = importedData.records.map(record => ({
-                        date: record.date,
-                        meals: record.meals.map(meal => ({
-                            time: meal.time,
-                            type: meal.type,
-                            foods: meal.foods.map(food => ({
-                                ...food,
-                                calories: food.calories || calculateCalories(food.name, food.amount, food.category)
-                            }))
-                        }))
-                    }));
-
-                    if (confirm('是否要合并导入的数据与现有数据？\n点击"确定"合并数据\n点击"取消"替换现有数据')) {
+                    // 合并或替换数据
+                    if (confirm('是否要合并数据？\n点击"确定"合并，点击"取消"替换')) {
                         const existingDates = new Set(foodRecords.records.map(r => r.date));
                         foodRecords.records = [
                             ...foodRecords.records,
-                            ...validRecords.filter(r => !existingDates.has(r.date))
+                            ...data.records.filter(r => !existingDates.has(r.date))
                         ];
                     } else {
-                        foodRecords = { records: validRecords };
+                        foodRecords = { records: [...data.records] };
                     }
 
-                    saveFoodRecords();
-                    initCharts();
-                    updateCharts();
-                    
-                    alert(`数据导入成功，共导入 ${validRecords.length} 条记录`);
+                    // 保存到localStorage
+                    localStorage.setItem('foodRecords', JSON.stringify(foodRecords));
 
+                    // 更新图表
+                    updateChartData();
+
+                    alert(`数据导入成功！共导入 ${data.records.length} 条记录`);
                 } catch (error) {
-                    console.error('导入数据处理失败:', error);
-                    alert(`导入失败: ${error.message}\n请检查文件格式是否正确`);
+                    console.error('导入失败:', error);
+                    alert(`导入失败: ${error.message}`);
                 }
             };
 
