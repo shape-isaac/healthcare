@@ -1717,6 +1717,183 @@
             
             updateMealType();
         });
+
+        // 修改生成分析报告函数
+        async function generateAIAnalysis() {
+            const analysisDiv = document.getElementById('aiAnalysis');
+            analysisDiv.innerHTML = '<div class="loading">正在生成分析报告，请耐心等待...</div>';
+
+            try {
+                // 数据验证
+                if (!foodRecords.records || foodRecords.records.length === 0) {
+                    throw new Error('没有足够的饮食记录来生成分析报告。请至少记录一天的饮食。');
+                }
+
+                // 计算分析数据
+                const records = foodRecords.records;
+                const analysis = generateLocalAnalysis(records);
+                
+                // 显示报告
+                analysisDiv.innerHTML = `
+                    <div class="analysis-report">
+                        ${analysis}
+                        <div class="report-date">
+                            生成时间：${new Date().toLocaleString()}
+                        </div>
+                    </div>
+                `;
+            } catch (error) {
+                analysisDiv.innerHTML = `
+                    <div class="error-message">
+                        <h3>😔 ${error.message}</h3>
+                    </div>
+                `;
+            }
+        }
+
+        // 添加本地分析生成函数
+        function generateLocalAnalysis(records) {
+            // 1. 计算基础数据
+            const totalCalories = records.reduce((sum, record) => {
+                return sum + record.meals.reduce((mealSum, meal) => {
+                    return mealSum + meal.foods.reduce((foodSum, food) => {
+                        return foodSum + (parseFloat(food.calories) || 0);
+                    }, 0);
+                }, 0);
+            }, 0);
+
+            const avgCalories = Math.round(totalCalories / records.length);
+
+            // 2. 计算食物分类统计
+            const categoryStats = {};
+            records.forEach(record => {
+                record.meals.forEach(meal => {
+                    meal.foods.forEach(food => {
+                        categoryStats[food.category] = (categoryStats[food.category] || 0) + 1;
+                    });
+                });
+            });
+
+            // 3. 分析用餐时间模式
+            const mealTimes = {
+                breakfast: [],
+                lunch: [],
+                dinner: [],
+                snack: []
+            };
+
+            records.forEach(record => {
+                record.meals.forEach(meal => {
+                    if (meal.time) {
+                        mealTimes[meal.type].push(meal.time);
+                    }
+                });
+            });
+
+            // 4. 生成HTML报告
+            return `
+                <section class="data-summary">
+                    <h3>📊 营养数据概要</h3>
+                    <div class="data-item">
+                        <span class="stat-number">${avgCalories}</span>
+                        <span class="stat-label">平均每日卡路里</span>
+                    </div>
+                    <div class="data-item">
+                        <h4>🥗 常见食物类别</h4>
+                        <div class="stat-chart">
+                            ${Object.entries(categoryStats)
+                                .sort(([,a], [,b]) => b - a)
+                                .map(([category, count]) => 
+                                    `<div class="tag">${category}: ${count}次</div>`
+                                ).join('')}
+                        </div>
+                    </div>
+                </section>
+                
+                <section class="food-personality">
+                    <h3>🎭 饮食特点分析</h3>
+                    <div class="tags">
+                        <div class="tag-group">
+                            <div class="tag">⏰ 规律用餐指数</div>
+                            <div class="tag-explanation">
+                                共记录 ${records.length} 天的饮食数据
+                            </div>
+                        </div>
+                        <div class="tag-group">
+                            <div class="tag">🍜 饮食多样性</div>
+                            <div class="tag-explanation">
+                                涉及 ${Object.keys(categoryStats).length} 种食物类别
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                
+                <section class="suggestions">
+                    <h3>💡 建议</h3>
+                    <div class="suggestion-item">
+                        <span class="suggestion-icon">🎯</span>
+                        <div class="suggestion-content">
+                            <h4>营养均衡建议</h4>
+                            <p>${generateNutritionAdvice(avgCalories, categoryStats)}</p>
+                        </div>
+                    </div>
+                    <div class="suggestion-item">
+                        <span class="suggestion-icon">⏰</span>
+                        <div class="suggestion-content">
+                            <h4>用餐时间建议</h4>
+                            <p>${generateTimeAdvice(mealTimes)}</p>
+                        </div>
+                    </div>
+                </section>
+            `;
+        }
+
+        // 生成营养建议
+        function generateNutritionAdvice(avgCalories, categoryStats) {
+            let advice = '';
+            
+            if (avgCalories < 1500) {
+                advice += '您的日均卡路里摄入偏低，建议适当增加食量，特别是优质蛋白质和全谷物。';
+            } else if (avgCalories > 2500) {
+                advice += '您的日均卡路里摄入偏高，建议控制每餐份量，增加运动量。';
+            } else {
+                advice += '您的日均卡路里摄入适中，继续保持健康的饮食习惯。';
+            }
+
+            // 分析食物多样性
+            const categories = Object.keys(categoryStats);
+            if (categories.length < 5) {
+                advice += '建议增加饮食种类，尝试更多不同类型的食物。';
+            }
+
+            return advice;
+        }
+
+        // 生成用餐时间建议
+        function generateTimeAdvice(mealTimes) {
+            let advice = '';
+            
+            // 检查是否有规律的早餐
+            if (mealTimes.breakfast.length < foodRecords.records.length * 0.7) {
+                advice += '建议养成规律吃早餐的习惯，这对身体健康很重要。';
+            }
+
+            // 检查夜宵情况
+            const lateNightSnacks = mealTimes.snack.filter(time => {
+                const hour = parseInt(time.split(':')[0]);
+                return hour >= 22 || hour < 5;
+            });
+
+            if (lateNightSnacks.length > 0) {
+                advice += '注意到您有深夜进食的情况，建议避免在晚上10点后进食。';
+            }
+
+            if (!advice) {
+                advice = '您的用餐时间安排比较合理，继续保持！';
+            }
+
+            return advice;
+        }
     </script>
 </body>
 </html>
