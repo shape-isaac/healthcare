@@ -1366,6 +1366,223 @@
                 mealType.value = 'snack';      // 其他时间为加餐
             }
         }
+
+        // 修改初始化和数据加载函数
+        async function initializeFoodRecords() {
+            try {
+                const savedData = localStorage.getItem('foodRecords');
+                if (savedData) {
+                    foodRecords = JSON.parse(savedData);
+                    console.log('已加载本地数据:', foodRecords);
+                }
+                return true;
+            } catch (error) {
+                console.error('初始化数据失败:', error);
+                foodRecords = { records: [] };
+                return false;
+            }
+        }
+
+        // 修改初始化图表函数
+        function initCharts() {
+            try {
+                const chartDom = document.getElementById('caloriesChart');
+                if (!chartDom) {
+                    console.error('找不到图表容器元素');
+                    return;
+                }
+
+                // 确保容器有正确的尺寸
+                chartDom.style.width = '100%';
+                chartDom.style.height = '350px';
+
+                // 销毁已存在的实例
+                const existingChart = echarts.getInstanceByDom(chartDom);
+                if (existingChart) {
+                    existingChart.dispose();
+                }
+
+                // 创建新实例
+                const caloriesChart = echarts.init(chartDom);
+                
+                // 基础配置
+                const option = {
+                    title: { 
+                        text: '卡路里摄入趋势',
+                        left: 'center'
+                    },
+                    tooltip: {
+                        trigger: 'axis',
+                        formatter: '{b}: {c} 卡路里'
+                    },
+                    grid: {
+                        left: '3%',
+                        right: '4%',
+                        bottom: '3%',
+                        containLabel: true
+                    },
+                    xAxis: { 
+                        type: 'category',
+                        data: [],
+                        axisLabel: {
+                            rotate: 45,
+                            interval: 0
+                        }
+                    },
+                    yAxis: { 
+                        type: 'value',
+                        name: '卡路里'
+                    },
+                    series: [{
+                        name: '每日卡路里',
+                        type: 'line',
+                        data: [],
+                        smooth: true,
+                        symbol: 'circle',
+                        symbolSize: 8,
+                        itemStyle: {
+                            color: '#4CAF50'
+                        },
+                        areaStyle: {
+                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                { offset: 0, color: 'rgba(76,175,80,0.3)' },
+                                { offset: 1, color: 'rgba(76,175,80,0.1)' }
+                            ])
+                        }
+                    }]
+                };
+                
+                caloriesChart.setOption(option);
+
+                // 添加响应式支持
+                window.addEventListener('resize', () => {
+                    caloriesChart.resize();
+                });
+
+                return caloriesChart;
+            } catch (error) {
+                console.error('图表初始化失败:', error);
+                return null;
+            }
+        }
+
+        // 修改更新图表函数
+        function updateCharts() {
+            try {
+                const chartDom = document.getElementById('caloriesChart');
+                let chart = echarts.getInstanceByDom(chartDom);
+                
+                if (!chart) {
+                    chart = initCharts();
+                    if (!chart) return;
+                }
+
+                // 确保有数据
+                if (!foodRecords || !foodRecords.records) {
+                    console.log('没有可用数据，显示空图表');
+                    chart.setOption({
+                        xAxis: { data: [] },
+                        series: [{ data: [] }]
+                    });
+                    return;
+                }
+
+                // 按日期排序并计算每日总卡路里
+                const dailyData = foodRecords.records
+                    .sort((a, b) => new Date(a.date) - new Date(b.date))
+                    .map(record => {
+                        const dailyCalories = record.meals.reduce((total, meal) => 
+                            total + meal.foods.reduce((mealTotal, food) => 
+                                mealTotal + (parseFloat(food.calories) || 0), 0), 0);
+                        
+                        return {
+                            date: record.date,
+                            calories: Math.round(dailyCalories)
+                        };
+                    });
+
+                console.log('处理后的图表数据:', dailyData);
+
+                // 更新图表数据
+                chart.setOption({
+                    xAxis: {
+                        data: dailyData.map(item => item.date)
+                    },
+                    series: [{
+                        data: dailyData.map(item => item.calories)
+                    }]
+                });
+
+                // 更新热力图
+                updateHeatmap();
+            } catch (error) {
+                console.error('更新图表失败:', error);
+            }
+        }
+
+        // 修改数据导入函数
+        function importRecords(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const importedData = JSON.parse(e.target.result);
+                    console.log('导入的原始数据:', importedData);
+
+                    // 验证数据结构
+                    if (!importedData || !importedData.records) {
+                        throw new Error('无效的数据格式: 缺少records字段');
+                    }
+
+                    // 合并或替换数据
+                    if (confirm('是否合并数据？点击"确定"合并，点击"取消"替换')) {
+                        const existingDates = new Set(foodRecords.records.map(r => r.date));
+                        foodRecords.records = [
+                            ...foodRecords.records,
+                            ...importedData.records.filter(r => !existingDates.has(r.date))
+                        ];
+                    } else {
+                        foodRecords = importedData;
+                    }
+
+                    // 保存并更新
+                    localStorage.setItem('foodRecords', JSON.stringify(foodRecords));
+                    console.log('保存的数据:', foodRecords);
+                    
+                    // 强制重新初始化和更新图表
+                    initCharts();
+                    updateCharts();
+                    
+                    alert('数据导入成功！');
+                } catch (error) {
+                    console.error('导入失败:', error);
+                    alert(`导入失败: ${error.message}`);
+                }
+            };
+
+            reader.onerror = () => alert('文件读取失败');
+            reader.readAsText(file);
+            event.target.value = '';
+        }
+
+        // 修改页面加载处理
+        document.addEventListener('DOMContentLoaded', async function() {
+            await initializeFoodRecords();
+            initCharts();
+            updateCharts();
+            
+            // 设置当前日期和时间
+            const now = new Date();
+            document.getElementById('date').valueAsDate = now;
+            
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            document.getElementById('time').value = `${hours}:${minutes}`;
+            
+            updateMealType();
+        });
     </script>
 </body>
 </html>
