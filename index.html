@@ -2545,6 +2545,133 @@
             
             return advice;
         }
+
+        // 添加缺失的辅助函数
+        function analyzeRegularity(records) {
+            // 分析用餐时间规律性
+            const mealTimeMap = {
+                breakfast: [],
+                lunch: [],
+                dinner: [],
+                snack: []
+            };
+
+            // 收集所有用餐时间
+            records.forEach(record => {
+                record.meals.forEach(meal => {
+                    if (meal.time) {
+                        const hour = parseInt(meal.time.split(':')[0]);
+                        mealTimeMap[meal.type].push(hour);
+                    }
+                });
+            });
+
+            // 计算每种用餐类型的时间规律性分数
+            let totalScore = 0;
+            let validTypes = 0;
+
+            for (const [type, times] of Object.entries(mealTimeMap)) {
+                if (times.length > 0) {
+                    // 计算时间差异标准差
+                    const avg = times.reduce((a, b) => a + b, 0) / times.length;
+                    const variance = times.reduce((a, b) => a + Math.pow(b - avg, 2), 0) / times.length;
+                    const stdDev = Math.sqrt(variance);
+
+                    // 标准差越小，规律性越高
+                    const typeScore = Math.max(0, 1 - (stdDev / 4)); // 4小时作为基准
+                    totalScore += typeScore;
+                    validTypes++;
+                }
+            }
+
+            // 返回平均规律性分数 (0-1)
+            return validTypes > 0 ? totalScore / validTypes : 0;
+        }
+
+        function analyzeMealTimes(mealTimes) {
+            let patterns = [];
+
+            // 分析早餐规律
+            if (mealTimes.breakfast.length > 0) {
+                const avgBreakfastTime = getAverageTime(mealTimes.breakfast);
+                patterns.push(`您通常在 ${avgBreakfastTime} 享用早餐`);
+            }
+
+            // 分析午餐规律
+            if (mealTimes.lunch.length > 0) {
+                const avgLunchTime = getAverageTime(mealTimes.lunch);
+                patterns.push(`午餐时间约在 ${avgLunchTime}`);
+            }
+
+            // 分析晚餐规律
+            if (mealTimes.dinner.length > 0) {
+                const avgDinnerTime = getAverageTime(mealTimes.dinner);
+                patterns.push(`晚餐时间在 ${avgDinnerTime} 左右`);
+            }
+
+            // 分析加餐情况
+            const lateNightSnacks = mealTimes.snack.filter(time => {
+                const hour = parseInt(time.split(':')[0]);
+                return hour >= 22 || hour < 5;
+            });
+
+            if (lateNightSnacks.length > 0) {
+                patterns.push(`存在${lateNightSnacks.length}次夜间加餐情况`);
+            }
+
+            return patterns.join('，') || '暂无足够数据分析用餐规律';
+        }
+
+        function getAverageTime(times) {
+            if (times.length === 0) return '';
+
+            // 将所有时间转换为分钟数
+            const minutes = times.map(time => {
+                const [hours, mins] = time.split(':').map(Number);
+                return hours * 60 + mins;
+            });
+
+            // 计算平均值
+            const avgMinutes = Math.round(minutes.reduce((a, b) => a + b, 0) / minutes.length);
+            const hours = Math.floor(avgMinutes / 60);
+            const mins = avgMinutes % 60;
+
+            return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+        }
+
+        function getCaloriesAdvice(avgCalories) {
+            if (avgCalories < 1500) {
+                return `您的日均摄入${avgCalories}卡路里偏低，建议适当增加食量。可以考虑增加一些健康的高能量食物，如坚果、牛油果等。`;
+            } else if (avgCalories > 2500) {
+                return `目前日均摄入${avgCalories}卡路里偏高，建议控制总热量，增加运动量，选择低脂健康的食物。`;
+            } else {
+                return `您的日均摄入${avgCalories}卡路里在合理范围内，继续保持均衡的饮食习惯！`;
+            }
+        }
+
+        function getNutritionBalanceAdvice(categoryStats) {
+            const categories = Object.entries(categoryStats);
+            const totalItems = categories.reduce((sum, [, count]) => sum + count, 0);
+            const advice = [];
+
+            // 计算各类别占比
+            categories.forEach(([category, count]) => {
+                const percentage = (count / totalItems * 100).toFixed(1);
+                if (category === '蔬菜' && percentage < 20) {
+                    advice.push('建议增加蔬菜的摄入量');
+                } else if (category === '水果' && percentage < 10) {
+                    advice.push('可以多吃些水果补充维生素');
+                } else if (category === '零食' && percentage > 20) {
+                    advice.push('零食摄入偏多，建议适当控制');
+                }
+            });
+
+            if (advice.length === 0) {
+                return '您的饮食结构相对均衡，建议继续保持！';
+            }
+
+            return advice.join('；') + '。';
+        }
     </script>
 </body>
 </html>
