@@ -488,32 +488,137 @@
     </div>
 
     <script>
-        // 1. 全局变量声明和初始化 - 必须放在最前面
+        // 1. 首先定义常量配置对象
+        const CONFIG = {
+            STANDARD_PORTIONS: {
+                "碗": 250,
+                "份": 200,
+                "片": 30,
+                "个": {
+                    "水果": 150,
+                    "鸡蛋": 50
+                },
+                "盒": 200,
+                "杯": 250
+            },
+            CALORIES_DATABASE: {
+                "主食": {
+                    "米饭": 116,
+                    "面包": 260,
+                    "面条": 110,
+                    "馒头": 223,
+                    "饺子": 200
+                },
+                "肉类": {
+                    "猪肉": 143,
+                    "牛肉": 250,
+                    "羊肉": 203
+                },
+                "禽类": {
+                    "鸡肉": 165,
+                    "鸭肉": 240,
+                    "鹅肉": 238
+                },
+                "水产": {
+                    "鱼": 100,
+                    "虾": 85,
+                    "蟹": 97
+                },
+                "蛋类": {
+                    "鸡蛋": 155,
+                    "鸭蛋": 185,
+                    "皮蛋": 127
+                },
+                "豆制品": {
+                    "豆腐": 76,
+                    "豆浆": 31,
+                    "腐竹": 225
+                },
+                "叶菜类": {
+                    "生菜": 15,
+                    "菠菜": 23,
+                    "白菜": 20
+                },
+                "根茎类": {
+                    "胡萝卜": 41,
+                    "土豆": 76,
+                    "山药": 88
+                },
+                "菌菇类": {
+                    "香菇": 26,
+                    "平菇": 29,
+                    "木耳": 31
+                },
+                "水果": {
+                    "苹果": 52,
+                    "香蕉": 93,
+                    "橙子": 47
+                },
+                "坚果": {
+                    "花生": 589,
+                    "核桃": 654,
+                    "杏仁": 579
+                },
+                "乳制品": {
+                    "牛奶": 60,
+                    "酸奶": 70,
+                    "奶酪": 366
+                },
+                "零食": {
+                    "饼干": 435,
+                    "薯片": 542,
+                    "巧克力": 545
+                },
+                "饮品": {
+                    "咖啡": 1,
+                    "茶": 1,
+                    "果汁": 45
+                }
+            },
+            API: {
+                DEEPSEEK_API_TOKEN: 'your-default-token',
+                DEEPSEEK_API_URL: 'https://api.siliconflow.cn/v1/chat/completions'
+            }
+        };
+
+        // 2. 全局变量
         let foodRecords = { records: [] };
         let chartInstance = null;
 
-        // 2. 页面加载时的初始化处理
+        // 3. 辅助函数
+        function chineseToNumber(chinese) {
+            const numbers = {
+                '零': 0, '一': 1, '二': 2, '两': 2, '三': 3, '四': 4,
+                '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10,
+                '半': 0.5
+            };
+            return numbers[chinese] || chinese;
+        }
+
+        // 4. 页面加载初始化
         document.addEventListener('DOMContentLoaded', async function() {
-            // 加载保存的数据
             try {
+                // 加载保存的数据
                 const savedData = localStorage.getItem('foodRecords');
                 if (savedData) {
                     foodRecords = JSON.parse(savedData);
                     console.log('已加载本地数据:', foodRecords);
                 }
-            } catch (error) {
-                console.error('加载本地数据失败:', error);
-                foodRecords = { records: [] };
-            }
 
-            // 初始化图表
-            initializeCharts();
-            
-            // 设置当前日期和时间
-            const now = new Date();
-            document.getElementById('date').valueAsDate = now;
-            document.getElementById('time').value = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-            updateMealType();
+                // 初始化图表
+                initializeCharts();
+                
+                // 设置当前日期和时间
+                const now = new Date();
+                document.getElementById('date').valueAsDate = now;
+                document.getElementById('time').value = 
+                    `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                
+                // 设置用餐类型
+                updateMealType();
+            } catch (error) {
+                console.error('初始化失败:', error);
+            }
         });
 
         // 3. 修改初始化图表函数
