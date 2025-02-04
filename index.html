@@ -1140,36 +1140,86 @@
             }
         }
 
-        // 导入记录
+        // 修改导入记录函数
         function importRecords(event) {
             const file = event.target.files[0];
-            if (!file) return;
+            if (!file) {
+                alert('请选择文件');
+                return;
+            }
+
+            // 验证文件类型
+            if (file.type !== 'application/json' && !file.name.endsWith('.json')) {
+                alert('请选择JSON格式的文件');
+                event.target.value = '';
+                return;
+            }
 
             const reader = new FileReader();
+            
             reader.onload = function(e) {
                 try {
+                    // 解析JSON数据
                     const importedData = JSON.parse(e.target.result);
-                    if (importedData && Array.isArray(importedData.records)) {
-                        if (confirm('是否要合并导入的数据与现有数据？\n点击"确定"合并数据\n点击"取消"替换现有数据')) {
-                            // 合并数据
-                            const existingDates = new Set(foodRecords.records.map(r => r.date));
-                            const newRecords = importedData.records.filter(r => !existingDates.has(r.date));
-                            foodRecords.records = [...foodRecords.records, ...newRecords];
-                        } else {
-                            // 替换数据
-                            foodRecords = importedData;
-                        }
-                        saveFoodRecords();
-                        updateCharts();
-                        alert('数据导入成功！');
-                    } else {
-                        throw new Error('无效的数据格式');
+                    
+                    // 验证数据结构
+                    if (!importedData || typeof importedData !== 'object') {
+                        throw new Error('导入的数据格式无效');
                     }
+
+                    if (!Array.isArray(importedData.records)) {
+                        throw new Error('导入的数据缺少records数组');
+                    }
+
+                    // 验证records数组中的数据结构
+                    const isValidRecord = (record) => {
+                        return record.date && 
+                               Array.isArray(record.meals) && 
+                               record.meals.every(meal => 
+                                   meal.time && 
+                                   meal.type && 
+                                   Array.isArray(meal.foods) &&
+                                   meal.foods.every(food => 
+                                       food.name && 
+                                       food.amount && 
+                                       food.category && 
+                                       typeof food.calories === 'number'
+                                   )
+                               );
+                    };
+
+                    if (!importedData.records.every(isValidRecord)) {
+                        throw new Error('部分记录数据格式不正确');
+                    }
+
+                    // 数据验证通过，询问是否合并
+                    if (confirm('是否要合并导入的数据与现有数据？\n点击"确定"合并数据\n点击"取消"替换现有数据')) {
+                        // 合并数据，避免重复日期
+                        const existingDates = new Set(foodRecords.records.map(r => r.date));
+                        const newRecords = importedData.records.filter(r => !existingDates.has(r.date));
+                        foodRecords.records = [...foodRecords.records, ...newRecords];
+                    } else {
+                        // 完全替换数据
+                        foodRecords = importedData;
+                    }
+
+                    // 保存并更新
+                    saveFoodRecords();
+                    updateCharts();
+                    alert(`数据导入成功！\n共导入 ${importedData.records.length} 条记录。`);
+
                 } catch (error) {
-                    console.error('导入失败:', error);
-                    alert('导入失败：文件格式不正确');
+                    console.error('导入数据时出错:', error);
+                    alert(`导入失败：${error.message}\n请确保文件格式正确。`);
                 }
             };
+
+            reader.onerror = function() {
+                console.error('文件读取错误');
+                alert('文件读取错误，请重试');
+            };
+
+            // 开始读取文件
             reader.readAsText(file);
             // 重置 input 以允许重复导入相同文件
             event.target.value = '';
