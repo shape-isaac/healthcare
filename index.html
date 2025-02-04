@@ -488,7 +488,11 @@
     </div>
 
     <script>
-        // 配置对象
+        // 1. 首先声明全局变量
+        let foodRecords = { records: [] };
+        let fileHandle = null;
+
+        // 2. 配置对象（保持不变）
         const CONFIG = {
             DEEPSEEK_API_TOKEN: process.env.DEEPSEEK_API_TOKEN || 'your-default-token', // 使用环境变量
             DEEPSEEK_API_URL: process.env.DEEPSEEK_API_URL || 'https://api.siliconflow.cn/v1/chat/completions', // 使用环境变量
@@ -579,53 +583,103 @@
             }
         };
 
-        // 数据存储对象 - 移到最前面并立即初始化
-        let foodRecords = {
-            records: []
-        };
-
-        // 首次加载时从localStorage恢复数据
-        try {
-            const savedData = localStorage.getItem('foodRecords');
-            if (savedData) {
-                foodRecords = JSON.parse(savedData);
-            }
-        } catch (error) {
-            console.error('从localStorage加载数据失败:', error);
-            // 保持使用空的初始值
-        }
-
-        // 文件句柄
-        let fileHandle;
-
-        // 修改页面加载时的初始化函数
-        window.onload = async function() {
+        // 3. 数据初始化函数 - 确保只在需要时初始化一次
+        function initializeFoodRecords() {
             try {
-                // 首先尝试从 localStorage 加载数据
                 const savedData = localStorage.getItem('foodRecords');
                 if (savedData) {
-                    foodRecords = JSON.parse(savedData);
+                    const parsedData = JSON.parse(savedData);
+                    // 确保数据格式正确
+                    if (parsedData && Array.isArray(parsedData.records)) {
+                        foodRecords = parsedData;
+                    }
                 }
+                return true;
             } catch (error) {
-                console.error('从localStorage加载数据失败:', error);
+                console.error('初始化数据失败:', error);
                 foodRecords = { records: [] };
+                return false;
             }
+        }
+
+        // 4. 修改页面加载函数
+        window.onload = function() {
+            // 初始化数据
+            initializeFoodRecords();
             
+            // 初始化图表
             initCharts();
             updateCharts();
             
-            // 设置当前日期
-            document.getElementById('date').valueAsDate = new Date();
-            
-            // 设置当前时间
+            // 设置当前日期和时间
             const now = new Date();
+            document.getElementById('date').valueAsDate = now;
+            
             const hours = String(now.getHours()).padStart(2, '0');
             const minutes = String(now.getMinutes()).padStart(2, '0');
             document.getElementById('time').value = `${hours}:${minutes}`;
             
-            // 根据当前时间设置用餐类型
+            // 设置用餐类型
             updateMealType();
         };
+
+        // 修改导入记录函数
+        function importRecords(event) {
+            const file = event.target.files[0];
+            if (!file) {
+                alert('请选择文件');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const importedData = JSON.parse(e.target.result);
+                    
+                    // 验证数据结构
+                    if (!importedData || !Array.isArray(importedData.records)) {
+                        throw new Error('导入的数据格式无效');
+                    }
+
+                    // 确保每条记录都有必要的字段
+                    const isValidRecord = record => {
+                        return record.date && Array.isArray(record.meals) &&
+                               record.meals.every(meal => 
+                                   meal.time && meal.type && Array.isArray(meal.foods) &&
+                                   meal.foods.every(food => 
+                                       food.name && food.amount && food.category
+                                   )
+                               );
+                    };
+
+                    if (!importedData.records.every(isValidRecord)) {
+                        throw new Error('数据格式不正确，请检查记录内容');
+                    }
+
+                    // 处理导入
+                    if (confirm('是否要合并导入的数据与现有数据？\n点击"确定"合并数据\n点击"取消"替换现有数据')) {
+                        const existingDates = new Set(foodRecords.records.map(r => r.date));
+                        const newRecords = importedData.records.filter(r => !existingDates.has(r.date));
+                        foodRecords.records = [...foodRecords.records, ...newRecords];
+                    } else {
+                        foodRecords = importedData;
+                    }
+
+                    // 保存并更新
+                    saveFoodRecords();
+                    updateCharts();
+                    alert(`数据导入成功，共导入 ${importedData.records.length} 条记录`);
+
+                } catch (error) {
+                    console.error('导入失败:', error);
+                    alert(`导入失败: ${error.message}`);
+                }
+            };
+
+            reader.onerror = () => alert('文件读取错误');
+            reader.readAsText(file);
+            event.target.value = '';
+        }
 
         // 保存记录到文件
         async function saveFoodRecords() {
@@ -1138,91 +1192,6 @@
                 console.error('导出失败:', error);
                 alert('导出数据失败');
             }
-        }
-
-        // 修改导入记录函数
-        function importRecords(event) {
-            const file = event.target.files[0];
-            if (!file) {
-                alert('请选择文件');
-                return;
-            }
-
-            // 验证文件类型
-            if (file.type !== 'application/json' && !file.name.endsWith('.json')) {
-                alert('请选择JSON格式的文件');
-                event.target.value = '';
-                return;
-            }
-
-            const reader = new FileReader();
-            
-            reader.onload = function(e) {
-                try {
-                    // 解析JSON数据
-                    const importedData = JSON.parse(e.target.result);
-                    
-                    // 验证数据结构
-                    if (!importedData || typeof importedData !== 'object') {
-                        throw new Error('导入的数据格式无效');
-                    }
-
-                    if (!Array.isArray(importedData.records)) {
-                        throw new Error('导入的数据缺少records数组');
-                    }
-
-                    // 验证records数组中的数据结构
-                    const isValidRecord = (record) => {
-                        return record.date && 
-                               Array.isArray(record.meals) && 
-                               record.meals.every(meal => 
-                                   meal.time && 
-                                   meal.type && 
-                                   Array.isArray(meal.foods) &&
-                                   meal.foods.every(food => 
-                                       food.name && 
-                                       food.amount && 
-                                       food.category && 
-                                       typeof food.calories === 'number'
-                                   )
-                               );
-                    };
-
-                    if (!importedData.records.every(isValidRecord)) {
-                        throw new Error('部分记录数据格式不正确');
-                    }
-
-                    // 数据验证通过，询问是否合并
-                    if (confirm('是否要合并导入的数据与现有数据？\n点击"确定"合并数据\n点击"取消"替换现有数据')) {
-                        // 合并数据，避免重复日期
-                        const existingDates = new Set(foodRecords.records.map(r => r.date));
-                        const newRecords = importedData.records.filter(r => !existingDates.has(r.date));
-                        foodRecords.records = [...foodRecords.records, ...newRecords];
-                    } else {
-                        // 完全替换数据
-                        foodRecords = importedData;
-                    }
-
-                    // 保存并更新
-                    saveFoodRecords();
-                    updateCharts();
-                    alert(`数据导入成功！\n共导入 ${importedData.records.length} 条记录。`);
-
-                } catch (error) {
-                    console.error('导入数据时出错:', error);
-                    alert(`导入失败：${error.message}\n请确保文件格式正确。`);
-                }
-            };
-
-            reader.onerror = function() {
-                console.error('文件读取错误');
-                alert('文件读取错误，请重试');
-            };
-
-            // 开始读取文件
-            reader.readAsText(file);
-            // 重置 input 以允许重复导入相同文件
-            event.target.value = '';
         }
 
         // 清除所有数据
