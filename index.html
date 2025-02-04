@@ -788,52 +788,110 @@
             return number * (CONFIG.STANDARD_PORTIONS[unit] || 100);
         }
 
-        // 初始化图表
+        // 修改初始化图表函数
         function initCharts() {
-            // 仅保留卡路里趋势图
-            const caloriesChart = echarts.init(document.getElementById('caloriesChart'));
-            caloriesChart.setOption({
-                title: { text: '卡路里摄入趋势' },
-                tooltip: {},
-                xAxis: { type: 'category', data: [] },
-                yAxis: { type: 'value' },
-                series: [{
-                    data: [],
-                    type: 'line',
-                    smooth: true
-                }]
-            });
+            try {
+                const chartDom = document.getElementById('caloriesChart');
+                if (!chartDom) {
+                    console.error('找不到图表容器元素');
+                    return;
+                }
+
+                // 销毁已存在的实例
+                const existingChart = echarts.getInstanceByDom(chartDom);
+                if (existingChart) {
+                    existingChart.dispose();
+                }
+
+                // 创建新实例
+                const caloriesChart = echarts.init(chartDom);
+                const option = {
+                    title: { 
+                        text: '卡路里摄入趋势',
+                        left: 'center'
+                    },
+                    tooltip: {
+                        trigger: 'axis'
+                    },
+                    xAxis: { 
+                        type: 'category',
+                        data: [],
+                        axisLabel: {
+                            rotate: 45
+                        }
+                    },
+                    yAxis: { 
+                        type: 'value',
+                        name: '卡路里'
+                    },
+                    series: [{
+                        name: '每日卡路里',
+                        type: 'line',
+                        data: [],
+                        smooth: true,
+                        symbol: 'circle',
+                        symbolSize: 8,
+                        itemStyle: {
+                            color: '#4CAF50'
+                        },
+                        areaStyle: {
+                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                { offset: 0, color: 'rgba(76,175,80,0.3)' },
+                                { offset: 1, color: 'rgba(76,175,80,0.1)' }
+                            ])
+                        }
+                    }]
+                };
+                
+                caloriesChart.setOption(option);
+                window.addEventListener('resize', () => caloriesChart.resize());
+            } catch (error) {
+                console.error('图表初始化失败:', error);
+            }
         }
 
-        // 更新图表
+        // 修改更新图表函数
         function updateCharts() {
-            const caloriesChart = echarts.init(document.getElementById('caloriesChart'));
+            try {
+                const chartDom = document.getElementById('caloriesChart');
+                const chart = echarts.getInstanceByDom(chartDom);
+                
+                if (!chart) {
+                    console.error('找不到图表实例');
+                    initCharts();
+                    return;
+                }
 
-            // 准备卡路里趋势数据
-            const dates = [];
-            const calories = [];
-
-            foodRecords.records.forEach(record => {
-                dates.push(record.date);
-                let dailyCalories = 0;
-                record.meals.forEach(meal => {
-                    meal.foods.forEach(food => {
-                        dailyCalories += food.calories;
+                // 准备数据
+                const data = foodRecords.records
+                    .sort((a, b) => new Date(a.date) - new Date(b.date))
+                    .map(record => {
+                        const dailyCalories = record.meals.reduce((total, meal) => 
+                            total + meal.foods.reduce((mealTotal, food) => 
+                                mealTotal + food.calories, 0), 0);
+                        return {
+                            date: record.date,
+                            calories: Math.round(dailyCalories)
+                        };
                     });
+
+                // 更新图表数据
+                chart.setOption({
+                    xAxis: {
+                        data: data.map(item => item.date)
+                    },
+                    series: [{
+                        data: data.map(item => item.calories)
+                    }]
                 });
-                calories.push(dailyCalories);
-            });
 
-            // 更新卡路里趋势图
-            caloriesChart.setOption({
-                xAxis: { data: dates },
-                series: [{
-                    data: calories
-                }]
-            });
-
-            // 更新热力图
-            updateHeatmap();
+                // 更新热力图
+                updateHeatmap();
+            } catch (error) {
+                console.error('更新图表失败:', error);
+                // 尝试重新初始化
+                initCharts();
+            }
         }
 
         // 更新热力图
