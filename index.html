@@ -579,10 +579,21 @@
             }
         };
 
-        // 数据存储对象
+        // 数据存储对象 - 移到最前面并立即初始化
         let foodRecords = {
             records: []
         };
+
+        // 首次加载时从localStorage恢复数据
+        try {
+            const savedData = localStorage.getItem('foodRecords');
+            if (savedData) {
+                foodRecords = JSON.parse(savedData);
+            }
+        } catch (error) {
+            console.error('从localStorage加载数据失败:', error);
+            // 保持使用空的初始值
+        }
 
         // 文件句柄
         let fileHandle;
