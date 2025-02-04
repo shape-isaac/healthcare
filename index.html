@@ -403,6 +403,125 @@
             color: #666;
             margin: 5px 0;
         }
+
+        /* 数据管理区域样式 */
+        .data-management {
+            background: linear-gradient(145deg, #ffffff, #f5f7fa);
+            border: 1px solid #e1e4e8;
+        }
+
+        .button-group {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            min-width: 180px;
+            transition: all 0.3s ease;
+        }
+
+        .btn .icon {
+            font-size: 1.2em;
+        }
+
+        .btn-export {
+            background-color: #4CAF50;
+        }
+
+        .btn-import {
+            background-color: #2196F3;
+        }
+
+        .btn-danger {
+            background-color: #dc3545;
+        }
+
+        .btn-secondary {
+            background-color: #6c757d;
+        }
+
+        /* 模态框样式 */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .modal-content {
+            position: relative;
+            background-color: #fff;
+            margin: 10% auto;
+            padding: 25px;
+            border-radius: 12px;
+            max-width: 500px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            animation: slideIn 0.3s ease;
+        }
+
+        .modal-content h3 {
+            margin-bottom: 15px;
+            color: #2c3e50;
+        }
+
+        .modal-content textarea {
+            width: 100%;
+            height: 200px;
+            padding: 12px;
+            margin: 15px 0;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            resize: none;
+            font-family: monospace;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes slideIn {
+            from { transform: translateY(-20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        /* 提示消息样式 */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 15px 25px;
+            background: #333;
+            color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 1000;
+            display: none;
+            animation: slideInRight 0.3s ease;
+        }
+
+        @keyframes slideInRight {
+            from { transform: translateX(100%); }
+            to { transform: translateX(0); }
+        }
     </style>
 </head>
 <body>
@@ -491,13 +610,34 @@
         </div>
 
         <!-- 在 AI分析结果区域 之前添加导入导出按钮 -->
-        <div class="input-section">
+        <div class="input-section data-management">
             <h2>数据管理</h2>
-            <div style="display: flex; gap: 10px;">
-                <button class="btn" onclick="exportRecords()">导出数据</button>
-                <input type="file" id="importFile" accept=".json" style="display: none;" onchange="importRecords(event)">
-                <button class="btn" onclick="document.getElementById('importFile').click()">导入数据</button>
-                <button class="btn" style="background-color: #dc3545;" onclick="clearAllRecords()">清除所有数据</button>
+            <div class="button-group">
+                <button class="btn btn-export" onclick="exportRecords()">
+                    <span class="icon">📤</span>
+                    <span class="text">复制数据到剪贴板</span>
+                </button>
+                <button class="btn btn-import" onclick="showImportDialog()">
+                    <span class="icon">📥</span>
+                    <span class="text">从剪贴板导入</span>
+                </button>
+                <button class="btn btn-danger" onclick="clearAllRecords()">
+                    <span class="icon">🗑️</span>
+                    <span class="text">清除所有数据</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- 添加导入对话框 -->
+        <div id="importDialog" class="modal">
+            <div class="modal-content">
+                <h3>从剪贴板导入数据</h3>
+                <p>请将数据粘贴到下面的文本框中：</p>
+                <textarea id="importData" placeholder="在此粘贴数据..."></textarea>
+                <div class="modal-buttons">
+                    <button class="btn" onclick="importFromClipboard()">导入</button>
+                    <button class="btn btn-secondary" onclick="closeImportDialog()">取消</button>
+                </div>
             </div>
         </div>
 
@@ -1445,6 +1585,78 @@
             return sortedRecords.slice(0, 7);
         }
 
+        // 修改导出函数为复制到剪贴板
+        async function exportRecords() {
+            try {
+                const data = JSON.stringify(foodRecords, null, 2);
+                await navigator.clipboard.writeText(data);
+                showToast('数据已复制到剪贴板！');
+            } catch (error) {
+                console.error('导出失败:', error);
+                showToast('导出失败，请重试', 'error');
+            }
+        }
+
+        // 显示导入对话框
+        function showImportDialog() {
+            document.getElementById('importDialog').style.display = 'block';
+        }
+
+        // 关闭导入对话框
+        function closeImportDialog() {
+            document.getElementById('importDialog').style.display = 'none';
+            document.getElementById('importData').value = '';
+        }
+
+        // 从剪贴板导入
+        async function importFromClipboard() {
+            const textArea = document.getElementById('importData');
+            try {
+                const importedData = JSON.parse(textArea.value);
+                
+                if (!importedData || !importedData.records) {
+                    throw new Error('无效的数据格式');
+                }
+
+                if (confirm('是否合并数据？点击"确定"合并，点击"取消"替换')) {
+                    const existingDates = new Set(foodRecords.records.map(r => r.date));
+                    foodRecords.records = [
+                        ...foodRecords.records,
+                        ...importedData.records.filter(r => !existingDates.has(r.date))
+                    ];
+                } else {
+                    foodRecords = importedData;
+                }
+
+                localStorage.setItem('foodRecords', JSON.stringify(foodRecords));
+                updateCharts();
+                closeImportDialog();
+                showToast('数据导入成功！');
+            } catch (error) {
+                console.error('导入失败:', error);
+                showToast('导入失败：' + error.message, 'error');
+            }
+        }
+
+        // 显示提示消息
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            
+            // 显示动画
+            toast.style.display = 'block';
+            
+            // 3秒后消失
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => {
+                    document.body.removeChild(toast);
+                }, 300);
+            }, 3000);
+        }
+
         // 导出记录
         function exportRecords() {
             try {
@@ -1883,20 +2095,6 @@
                 const hour = parseInt(time.split(':')[0]);
                 return hour >= 22 || hour < 5;
             });
-
-            if (lateNightSnacks.length > 0) {
-                advice += '注意到您有深夜进食的情况，建议避免在晚上10点后进食。';
-            }
-
-            if (!advice) {
-                advice = '您的用餐时间安排比较合理，继续保持！';
-            }
-
-            return advice;
-        }
-    </script>
-</body>
-</html>
 
             if (lateNightSnacks.length > 0) {
                 advice += '注意到您有深夜进食的情况，建议避免在晚上10点后进食。';
