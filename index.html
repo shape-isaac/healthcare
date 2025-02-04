@@ -488,11 +488,7 @@
     </div>
 
     <script>
-        // 1. 首先声明全局变量
-        let foodRecords = { records: [] };
-        let fileHandle = null;
-
-        // 2. 配置对象（保持不变）
+        // 1. 基础配置和全局变量
         const CONFIG = {
             DEEPSEEK_API_TOKEN: process.env.DEEPSEEK_API_TOKEN || 'your-default-token', // 使用环境变量
             DEEPSEEK_API_URL: process.env.DEEPSEEK_API_URL || 'https://api.siliconflow.cn/v1/chat/completions', // 使用环境变量
@@ -583,7 +579,119 @@
             }
         };
 
-        // 3. 数据初始化函数 - 确保只在需要时初始化一次
+        let foodRecords = { records: [] };
+        let fileHandle = null;
+
+        // 2. 辅助函数 - 这些函数不依赖其他函数
+        function chineseToNumber(chinese) {
+            const numbers = {
+                '零': 0, '一': 1, '二': 2, '两': 2, '三': 3, '四': 4,
+                '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10,
+                '半': 0.5
+            };
+            return numbers[chinese] || chinese;
+        }
+
+        function standardizeAmount(amount) {
+            // 处理中文数字
+            amount = amount.replace(/[一二两三四五六七八九十半]/g, match => chineseToNumber(match));
+            
+            // 处理模糊描述
+            if (['适量', '少许'].includes(amount)) {
+                return 50;
+            }
+
+            // 提取数字和单位
+            const match = amount.match(/(\d+\.?\d*)(碗|份|片|个|盒|杯|g|克)?/);
+            if (!match) return 100;
+
+            const [, num, unit] = match;
+            const number = parseFloat(num);
+
+            if (!unit || unit === 'g' || unit === '克') return number;
+            return number * (CONFIG.STANDARD_PORTIONS[unit] || 100);
+        }
+
+        // 3. 核心计算函数
+        function calculateCalories(food, amount, category) {
+            if (!food || !amount) return 0;
+            
+            const standardAmount = standardizeAmount(amount);
+            const categoryName = category ? category.split('(')[0].trim() : '';
+            const caloriesPer100g = CONFIG.CALORIES_DATABASE[categoryName]?.[food] || 100;
+            return (caloriesPer100g * standardAmount) / 100;
+        }
+
+        // 4. 数据管理函数
+        async function saveFoodRecords() {
+            try {
+                localStorage.setItem('foodRecords', JSON.stringify(foodRecords));
+            } catch (error) {
+                console.error('保存数据失败:', error);
+                alert('保存记录失败，请检查浏览器存储空间');
+            }
+        }
+
+        // 5. 修改导入记录函数
+        function importRecords(event) {
+            const file = event.target.files[0];
+            if (!file) {
+                alert('请选择文件');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const importedData = JSON.parse(e.target.result);
+                    console.log('导入的原始数据:', importedData);
+
+                    if (!importedData || !importedData.records) {
+                        throw new Error('数据格式无效：缺少records字段');
+                    }
+
+                    // 转换数据，保持原有的卡路里值
+                    const validRecords = importedData.records.map(record => ({
+                        date: record.date,
+                        meals: record.meals.map(meal => ({
+                            time: meal.time,
+                            type: meal.type,
+                            foods: meal.foods.map(food => ({
+                                ...food,
+                                calories: food.calories || calculateCalories(food.name, food.amount, food.category)
+                            }))
+                        }))
+                    }));
+
+                    if (confirm('是否要合并导入的数据与现有数据？\n点击"确定"合并数据\n点击"取消"替换现有数据')) {
+                        const existingDates = new Set(foodRecords.records.map(r => r.date));
+                        foodRecords.records = [
+                            ...foodRecords.records,
+                            ...validRecords.filter(r => !existingDates.has(r.date))
+                        ];
+                    } else {
+                        foodRecords = { records: validRecords };
+                    }
+
+                    saveFoodRecords();
+                    initCharts();
+                    updateCharts();
+                    
+                    alert(`数据导入成功，共导入 ${validRecords.length} 条记录`);
+
+                } catch (error) {
+                    console.error('导入数据处理失败:', error);
+                    alert(`导入失败: ${error.message}\n请检查文件格式是否正确`);
+                }
+            };
+
+            reader.onerror = () => alert('文件读取错误');
+            reader.readAsText(file);
+            event.target.value = '';
+        }
+
+        // 其余函数保持不变
+        // 1. 数据初始化函数 - 确保只在需要时初始化一次
         function initializeFoodRecords() {
             try {
                 const savedData = localStorage.getItem('foodRecords');
@@ -602,7 +710,7 @@
             }
         }
 
-        // 4. 修改页面加载函数
+        // 2. 修改页面加载函数
         window.onload = function() {
             // 初始化数据
             initializeFoodRecords();
@@ -622,64 +730,6 @@
             // 设置用餐类型
             updateMealType();
         };
-
-        // 修改导入记录函数
-        function importRecords(event) {
-            const file = event.target.files[0];
-            if (!file) {
-                alert('请选择文件');
-                return;
-            }
-
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    const importedData = JSON.parse(e.target.result);
-                    
-                    // 验证数据结构
-                    if (!importedData || !Array.isArray(importedData.records)) {
-                        throw new Error('导入的数据格式无效');
-                    }
-
-                    // 确保每条记录都有必要的字段
-                    const isValidRecord = record => {
-                        return record.date && Array.isArray(record.meals) &&
-                               record.meals.every(meal => 
-                                   meal.time && meal.type && Array.isArray(meal.foods) &&
-                                   meal.foods.every(food => 
-                                       food.name && food.amount && food.category
-                                   )
-                               );
-                    };
-
-                    if (!importedData.records.every(isValidRecord)) {
-                        throw new Error('数据格式不正确，请检查记录内容');
-                    }
-
-                    // 处理导入
-                    if (confirm('是否要合并导入的数据与现有数据？\n点击"确定"合并数据\n点击"取消"替换现有数据')) {
-                        const existingDates = new Set(foodRecords.records.map(r => r.date));
-                        const newRecords = importedData.records.filter(r => !existingDates.has(r.date));
-                        foodRecords.records = [...foodRecords.records, ...newRecords];
-                    } else {
-                        foodRecords = importedData;
-                    }
-
-                    // 保存并更新
-                    saveFoodRecords();
-                    updateCharts();
-                    alert(`数据导入成功，共导入 ${importedData.records.length} 条记录`);
-
-                } catch (error) {
-                    console.error('导入失败:', error);
-                    alert(`导入失败: ${error.message}`);
-                }
-            };
-
-            reader.onerror = () => alert('文件读取错误');
-            reader.readAsText(file);
-            event.target.value = '';
-        }
 
         // 保存记录到文件
         async function saveFoodRecords() {
@@ -862,26 +912,44 @@
                     return;
                 }
 
-                // 准备数据
-                const data = foodRecords.records
-                    .sort((a, b) => new Date(a.date) - new Date(b.date))
-                    .map(record => {
-                        const dailyCalories = record.meals.reduce((total, meal) => 
-                            total + meal.foods.reduce((mealTotal, food) => 
-                                mealTotal + food.calories, 0), 0);
-                        return {
-                            date: record.date,
-                            calories: Math.round(dailyCalories)
-                        };
-                    });
+                // 数据预处理
+                const records = foodRecords.records || [];
+                console.log('图表更新数据:', records); // 调试日志
 
-                // 更新图表数据
+                if (records.length === 0) {
+                    chart.setOption({
+                        xAxis: { data: [] },
+                        series: [{ data: [] }]
+                    });
+                    return;
+                }
+
+                // 按日期排序
+                const sortedRecords = [...records].sort((a, b) => 
+                    new Date(a.date) - new Date(b.date)
+                );
+
+                // 计算每日总卡路里
+                const chartData = sortedRecords.map(record => {
+                    const dailyCalories = record.meals.reduce((total, meal) => 
+                        total + meal.foods.reduce((mealTotal, food) => 
+                            mealTotal + (parseFloat(food.calories) || 0), 0), 0);
+                    
+                    return {
+                        date: record.date,
+                        calories: Math.round(dailyCalories)
+                    };
+                });
+
+                console.log('处理后的图表数据:', chartData); // 调试日志
+
+                // 更新图表
                 chart.setOption({
                     xAxis: {
-                        data: data.map(item => item.date)
+                        data: chartData.map(item => item.date)
                     },
                     series: [{
-                        data: data.map(item => item.calories)
+                        data: chartData.map(item => item.calories)
                     }]
                 });
 
@@ -889,8 +957,7 @@
                 updateHeatmap();
             } catch (error) {
                 console.error('更新图表失败:', error);
-                // 尝试重新初始化
-                initCharts();
+                initCharts(); // 尝试重新初始化
             }
         }
 
@@ -1191,18 +1258,30 @@
             }
         }
 
-        // 修改 generateAIAnalysis 函数
+        // 修改 generateAIAnalysis 函数的数据验证
         async function generateAIAnalysis() {
             const analysisDiv = document.getElementById('aiAnalysis');
             analysisDiv.innerHTML = '<div class="loading">正在生成分析报告</div>';
 
             try {
                 // 检查是否有任何记录
-                if (!foodRecords.records || foodRecords.records.length === 0) {
+                if (!foodRecords.records || !Array.isArray(foodRecords.records) || foodRecords.records.length === 0) {
                     analysisDiv.innerHTML = '<p>没有足够的饮食记录来生成分析报告。请至少记录一天的饮食。</p>';
                     return;
                 }
 
+                // 验证记录是否有效
+                const validRecords = foodRecords.records.filter(record => 
+                    record && record.meals && Array.isArray(record.meals) && 
+                    record.meals.some(meal => meal.foods && meal.foods.length > 0)
+                );
+
+                if (validRecords.length === 0) {
+                    analysisDiv.innerHTML = '<p>现有记录数据不完整，无法生成分析报告。请确保记录包含完整的餐食信息。</p>';
+                    return;
+                }
+
+                // 继续生成报告
                 const records = getLastSevenDaysRecords();
                 const content = formatRecordsForAI(records);
                 const analysis = await callDeepseekAPI(content);
